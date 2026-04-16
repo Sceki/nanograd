@@ -8,6 +8,75 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from nanograd.engine import Value
 
 
+def _as_value(x):
+    return x if isinstance(x, Value) else Value(x)
+
+
+def _as_real(x):
+    if isinstance(x, complex):
+        return x.real
+    return x
+
+
+def eml_exp(x):
+    return Value.eml(_as_value(x), 1.0)
+
+
+def eml_log(x):
+    one = Value(1.0)
+    return Value.eml(one, Value.eml(Value.eml(one, _as_value(x)), one))
+
+
+def eml_zero():
+    return eml_log(1.0)
+
+
+def eml_sub(a, b):
+    return Value.eml(eml_log(_as_value(a)), eml_exp(_as_value(b)))
+
+
+def eml_neg(x):
+    return eml_sub(eml_zero(), _as_value(x))
+
+
+def eml_add(a, b):
+    return eml_sub(_as_value(a), eml_neg(_as_value(b)))
+
+
+def eml_inv(x):
+    return eml_exp(eml_neg(eml_log(_as_value(x))))
+
+
+def eml_mul(a, b):
+    return eml_exp(eml_add(eml_log(_as_value(a)), eml_log(_as_value(b))))
+
+
+def eml_div(a, b):
+    return eml_mul(_as_value(a), eml_inv(_as_value(b)))
+
+
+def eml_tanh(x):
+    ex = eml_exp(_as_value(x))
+    exp_2x = eml_mul(ex, ex)
+    denom = eml_add(exp_2x, 1.0)
+    frac = eml_mul(2.0, eml_inv(denom))
+    return eml_sub(1.0, frac)
+
+
+def eml_cos(x):
+    i = 1j
+    exp_ix = eml_exp(eml_mul(i, _as_value(x)))
+    exp_minus_ix = eml_exp(eml_mul(-i, _as_value(x)))
+    return eml_div(eml_add(exp_ix, exp_minus_ix), 2.0)
+
+
+def eml_sin(x):
+    i = 1j
+    exp_ix = eml_exp(eml_mul(i, _as_value(x)))
+    exp_minus_ix = eml_exp(eml_mul(-i, _as_value(x)))
+    return eml_div(eml_sub(exp_ix, exp_minus_ix), 2j)
+
+
 def numerical_gradient(f, x, eps=1e-5):
     """Compute numerical gradient using finite differences."""
     x_plus = Value(x.data + eps)
@@ -28,7 +97,7 @@ class TestGradients:
         # Analytical gradient
         x = Value(x_val)
         y = Value(y_val)
-        f = x.eml(y)
+        f = Value.eml(x, y)
         f.backward()
         analytical_grad_x = x.grad
         
@@ -36,7 +105,7 @@ class TestGradients:
         x_num = Value(x_val)
         y_num = Value(y_val)
         numerical_grad_x = numerical_gradient(
-            lambda x: x.eml(y_num),
+            lambda x: Value.eml(x, y_num),
             x_num
         )
         
@@ -54,7 +123,7 @@ class TestGradients:
         # Analytical gradient
         x = Value(x_val)
         y = Value(y_val)
-        f = x.eml(y)
+        f = Value.eml(x, y)
         f.backward()
         analytical_grad_y = y.grad
         
@@ -62,7 +131,7 @@ class TestGradients:
         x_num = Value(x_val)
         y_num = Value(y_val)
         numerical_grad_y = numerical_gradient(
-            lambda y: x_num.eml(y),
+            lambda y: Value.eml(x_num, y),
             y_num
         )
         
@@ -85,7 +154,7 @@ class TestGradients:
             # Analytical
             x = Value(x_val)
             y = Value(y_val)
-            f = x.eml(y)
+            f = Value.eml(x, y)
             f.backward()
             
             # Verify analytical gradients match expected formulas
@@ -104,7 +173,7 @@ class TestGradients:
         
         x = Value(x_val)
         y = Value(y_val)
-        f = x.eml(y)
+        f = Value.eml(x, y)
         
         expected = math.exp(x_val) - math.log(y_val)
         assert abs(f.data - expected) < 1e-6, \
@@ -116,7 +185,7 @@ class TestGradients:
         y = Value(2.0)
         
         # First computation
-        f1 = x.eml(y)
+        f1 = Value.eml(x, y)
         f1.backward()
         grad_x_first = x.grad
         grad_y_first = y.grad
@@ -126,7 +195,7 @@ class TestGradients:
         y.grad = 0.0
         
         # Second computation
-        f2 = x.eml(y)
+        f2 = Value.eml(x, y)
         f2.backward()
         grad_x_second = x.grad
         grad_y_second = y.grad
@@ -134,6 +203,58 @@ class TestGradients:
         # Gradients should be the same for same inputs
         assert grad_x_first == grad_x_second
         assert grad_y_first == grad_y_second
+
+    def test_eml_arithmetic_forward(self):
+        x = 1.2
+        y = 0.3
+
+        sub_v = eml_sub(x, y)
+        add_v = eml_add(x, y)
+        div_v = eml_div(x, y)
+        mul_v = eml_mul(x, y)
+
+        assert abs(_as_real(sub_v.data) - (x - y)) < 1e-6
+        assert abs(_as_real(add_v.data) - (x + y)) < 1e-6
+        assert abs(_as_real(div_v.data) - (x / y)) < 1e-6
+        assert abs(_as_real(mul_v.data) - (x * y)) < 1e-6
+
+    def test_eml_arithmetic_gradients_wrt_x(self):
+        x0 = 1.2
+        y0 = 0.3
+
+        x = Value(x0)
+        y = Value(y0)
+        out = eml_sub(x, y)
+        out.backward()
+        assert abs(_as_real(x.grad) - 1.0) < 1e-6
+
+        x = Value(x0)
+        y = Value(y0)
+        out = eml_add(x, y)
+        out.backward()
+        assert abs(_as_real(x.grad) - 1.0) < 1e-6
+
+        x = Value(x0)
+        y = Value(y0)
+        out = eml_div(x, y)
+        out.backward()
+        assert abs(_as_real(x.grad) - (1.0 / y0)) < 1e-6
+
+        x = Value(x0)
+        y = Value(y0)
+        out = eml_mul(x, y)
+        out.backward()
+        assert abs(_as_real(x.grad) - y0) < 1e-6
+
+    def test_eml_sin_cos_tanh_forward(self):
+        x = 0.4
+        sin_v = eml_sin(x)
+        cos_v = eml_cos(x)
+        tanh_v = eml_tanh(x)
+
+        assert abs(_as_real(sin_v.data) - math.sin(x)) < 1e-6
+        assert abs(_as_real(cos_v.data) - math.cos(x)) < 1e-6
+        assert abs(_as_real(tanh_v.data) - math.tanh(x)) < 1e-6
 
 
 if __name__ == '__main__':

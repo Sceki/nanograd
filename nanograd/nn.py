@@ -8,52 +8,14 @@ def _as_value(x):
     return x if isinstance(x, Value) else Value(float(x))
 
 
-def _direct_add(a, b):
-    a = _as_value(a)
-    b = _as_value(b)
-    out = Value(a.data + b.data, (a, b), '+')
-
-    def _backward():
-        a.grad += out.grad
-        b.grad += out.grad
-
-    out._backward = _backward
-    return out
-
-
-def _direct_mul(a, b):
-    a = _as_value(a)
-    b = _as_value(b)
-    out = Value(a.data * b.data, (a, b), '*')
-
-    def _backward():
-        a.grad += b.data * out.grad
-        b.grad += a.data * out.grad
-
-    out._backward = _backward
-    return out
-
-
-def _direct_tanh(x):
-    x = _as_value(x)
-    t = math.tanh(x.data)
-    out = Value(t, (x,), 'tanh')
-
-    def _backward():
-        x.grad += (1 - t ** 2) * out.grad
-
-    out._backward = _backward
-    return out
-
-
 def _eml_exp(x):
-    return _as_value(x).eml(1.0)
+    return Value.eml(_as_value(x), 1.0)
 
 
 def _eml_log(x):
     # Canonical witness: log(x) = EML(1, EML(EML(1, x), 1))
     one = Value(1.0)
-    return one.eml(one.eml(_as_value(x)).eml(one))
+    return Value.eml(one, Value.eml(Value.eml(one, _as_value(x)), one))
 
 
 def _eml_zero():
@@ -64,7 +26,7 @@ def _eml_sub(a, b):
     # Canonical witness: a - b = EML(log(a), exp(b))
     a = _as_value(a)
     b = _as_value(b)
-    return _eml_log(a).eml(_eml_exp(b))
+    return Value.eml(_eml_log(a), _eml_exp(b))
 
 
 def _eml_neg(x):
@@ -99,27 +61,15 @@ def _eml_tanh(x):
 
 
 def add(a, b):
-    try:
-        return _eml_add(a, b)
-    except (ValueError, OverflowError):
-        # Real-only EML reconstruction can hit log-domain limits; preserve usability.
-        return _direct_add(a, b)
+    return _eml_add(a, b)
 
 
 def mul(a, b):
-    try:
-        return _eml_mul(a, b)
-    except (ValueError, OverflowError):
-        # Real-only EML reconstruction can hit log-domain limits; preserve usability.
-        return _direct_mul(a, b)
+    return _eml_mul(a, b)
 
 
 def tanh(x):
-    try:
-        return _eml_tanh(x)
-    except (ValueError, OverflowError):
-        # Real-only EML reconstruction can hit log-domain limits; preserve usability.
-        return _direct_tanh(x)
+    return _eml_tanh(x)
 
 
 class Module:
@@ -133,8 +83,8 @@ class Module:
 
 class Neuron(Module):
     def __init__(self, nin, nonlin=True):
-        self.w = [Value(random.uniform(-1, 1)) for _ in range(nin)]
-        self.b = Value(0.0)
+        self.w = [Value(random.uniform(0.1, 1.0)) for _ in range(nin)]
+        self.b = Value(0.1)
         self.nonlin = nonlin
 
     def __call__(self, x):

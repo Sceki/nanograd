@@ -32,7 +32,7 @@ class TestNN:
 
     def test_mlp_backward_populates_gradients(self):
         model = MLP(2, [3, 1])
-        out = model([1.0, -2.0])
+        out = model([1.0, 2.0])
         out.backward()
 
         params = model.parameters()
@@ -40,7 +40,7 @@ class TestNN:
 
     def test_zero_grad_resets_all_parameter_grads(self):
         model = MLP(2, [3, 1])
-        out = model([0.5, -1.0])
+        out = model([0.5, 1.0])
         out.backward()
 
         model.zero_grad()

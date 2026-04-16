@@ -12,17 +12,16 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     torch = None
 
-
 def _eml_torch(torch_mod, a, b):
     b = torch_mod.as_tensor(b, dtype=a.dtype, device=a.device)
     return torch_mod.exp(a) - torch_mod.log(b)
 
 
 def _build_graph_case_one_value(x):
-    a = x.eml(2.5)
-    b = a.eml(1.3)
-    c = x.eml(4.0)
-    y = b.eml(c)
+    a = Value.eml(x, 2.5)
+    b = Value.eml(a, 1.3)
+    c = Value.eml(x, 4.0)
+    y = Value.eml(b, c)
     return y
 
 
@@ -35,16 +34,16 @@ def _build_graph_case_one_torch(torch_mod, x):
 
 
 def _build_graph_case_two_value(x, y):
-    a = x.eml(y)
-    b = y.eml(4.0)
+    a = Value.eml(x, y)
+    b = Value.eml(y, 4.0)
 
-    c = a.eml(3.5)
-    d = b.eml(a)
+    c = Value.eml(a, 3.5)
+    d = Value.eml(b, a)
 
-    e = c.eml(x.eml(2.0))
-    f = d.eml(y.eml(5.0))
+    e = Value.eml(c, Value.eml(x, 2.0))
+    f = Value.eml(d, Value.eml(y, 5.0))
 
-    g = e.eml(f)
+    g = Value.eml(e, f)
     return g
 
 
